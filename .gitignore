@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+jira_knowledge_source.json
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.vscode/
+.idea/
+*.log
+.ruff_cache/
