@@ -1,4 +1,3 @@
-````markdown
 # Jira RAG Export Tool
 
 [![CI Status](https://github.com/pashau/jira-api-exporter/actions/workflows/lint.yml/badge.svg)](https://github.com/pashau/jira-api-exporter/actions)
@@ -91,4 +90,3 @@ Example:
 - The token is loaded **only** via environment variables (`.env`).
 - The `.env` file is included in `.gitignore` and must **never** be committed to version control.
 - Logs do not contain secrets by default (`INFO` level).
-````
