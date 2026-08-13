@@ -15,6 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jira_export")
 
+
 def main():
     try:
         config = JiraConfig.from_env()
