@@ -16,10 +16,10 @@ docker build -t jira-rag-exporter .
 docker run --env-file .env jira-rag-exporter
 ```
 
-*Note: The result (`jira_knowledge_source.json`) is created inside the container by default. To persist it, mount an output directory:*
+*Note: The result is saved inside the `jira-exports/` folder by default. To persist it, mount an output directory:*
 
 ```bash
-docker run --env-file .env -v $(pwd)/output:/app/output jira-rag-exporter
+docker run --env-file .env -v $(pwd)/jira-exports:/app/jira-exports jira-rag-exporter
 ```
 
 ## 💻 Local Installation
@@ -54,7 +54,7 @@ JIRA_PAT_TOKEN=YOUR_TOKEN_HERE
 JIRA_JQL=project = "PROJ" AND status = Closed
 ```
 
-*Note:* If you do not set `JIRA_OUTPUT_FILE`, the filename is derived automatically from the JQL query.
+*Note:* If you do not set `JIRA_OUTPUT_FILE`, the filename is derived automatically from the JQL query and saved in the `jira-exports/` directory (e.g. `jira-exports/jira_myproj_story_tickets.json`).
 
 ### 3. Run
 
@@ -65,7 +65,7 @@ python -m jira_exporter
 # py -m jira_exporter (Windows)
 ```
 
-The script prints the **number of matching tickets** before downloading and saves the result in JSON format.
+The script prints the **number of matching tickets** before downloading and saves the JSON result in `jira-exports/`.
 
 ## 📄 Output Format
 

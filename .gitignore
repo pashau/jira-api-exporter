@@ -14,3 +14,4 @@ build/
 .idea/
 *.log
 .ruff_cache/
+jira-exports/

@@ -15,13 +15,29 @@ logger = logging.getLogger(__name__)
 def _derive_filename_from_jql(jql: str) -> str:
     """
     Versucht, einen sinnvollen Dateinamen aus der JQL-Abfrage abzuleiten.
-    Erkennt z.B. 'project = "FOO"' -> 'foo_tickets.json'
+    Erkennt Project und IssueType: 'project = "FOO" AND issuetype = "Bug"'
+    -> 'jira-exports/jira_foo_bug_tickets.json'
     """
-    match = re.search(r'project\s*=\s*["\']?([A-Z0-9_]+)["\']?', jql, re.IGNORECASE)
-    if match:
-        return f"{match.group(1).strip().lower()}_tickets.json"
+    parts = ["jira-exports/jira"]
 
-    return "jira_export_default.json"
+    # 1. Project Name extrahieren
+    # Regex ignoriert Whitespace und Zitate
+    project_match = re.search(r'project\s*=\s*["\']?([A-Za-z0-9_]+)["\']?', jql, re.IGNORECASE)
+    if project_match:
+        parts.append(project_match.group(1).strip().lower())
+
+    # 2. IssueType extrahieren
+    # Wir suchen nach einfachen Zuweisungen (issuetype = "Value")
+    issuetype_match = re.search(r'issuetype\s*=\s*["\']?([A-Za-z0-9_]+)["\']?', jql, re.IGNORECASE)
+    if issuetype_match:
+        parts.append(issuetype_match.group(1).strip().lower())
+
+    # Fallback, falls nichts erkannt wurde
+    if len(parts) == 1:
+        parts.append("default")
+
+    # Dateinamen zusammenbauen
+    return f"{'_'.join(parts)}_tickets.json"
 
 
 @dataclass
@@ -32,7 +48,7 @@ class JiraConfig:
     pat_token: str
     jql: str
     max_results: int = 50
-    output_file: str = "jira_knowledge_source.json"
+    output_file: str = "jira-exports/jira_knowledge_source.json"
     verify_ssl: bool = True
     max_retries: int = 3
     retry_delay: float = 2.0
@@ -55,6 +71,11 @@ class JiraConfig:
         else:
             output_file = _derive_filename_from_jql(jql)
             logger.info(f"Kein Output-Filename gesetzt. Abgeleiteter Name: {output_file}")
+
+        # Sicherstellen, dass das Zielverzeichnis existiert
+        output_dir = os.path.dirname(output_file)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
 
         return cls(
             domain=domain.rstrip("/"),
