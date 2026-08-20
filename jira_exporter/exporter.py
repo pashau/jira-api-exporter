@@ -50,6 +50,9 @@ def build_rag_document(issue: Dict[str, Any]) -> Dict[str, Any]:
     priority_obj = fields.get("priority", {})
     priority_name = priority_obj.get("name", "") if isinstance(priority_obj, dict) else ""
 
+    issuetype_obj = fields.get("issuetype", {})
+    issuetype_name = issuetype_obj.get("name", "") if isinstance(issuetype_obj, dict) else ""
+
     content_parts = [f"# {summary_clean}"]
     if description_clean:
         content_parts.append(description_clean)
@@ -66,6 +69,7 @@ def build_rag_document(issue: Dict[str, Any]) -> Dict[str, Any]:
             "status_category": status_category,
             "resolution": resolution_name,
             "priority": priority_name,
+            "issuetype": issuetype_name,
             "created": TextCleaner.format_timestamp(fields.get("created")),
             "labels": labels,
         },
