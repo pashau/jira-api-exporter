@@ -119,7 +119,7 @@ For each export, the script prints the **number of matching tickets** before dow
 
 The JSON contains three main sections for each ticket:
 
-1. **`metadata`**: Filterable data such as `key`, `status`, `priority`, and `created`.
+1. **`metadata`**: Filterable data such as `key`, `status`, `priority`, `created`, the `epic_link` and the `issue_links`.
 2. **`content`**: The cleaned text for embeddings (summary + description + comments).
 3. **`raw_content`**: The unchanged but cleaned text of the description and comments.
 
@@ -127,11 +127,44 @@ Example:
 
 ```json
 {
-  "metadata": { "key": "PROJ-123", "status": "Closed", "created": "2024-01-01 12:00:00" },
+  "metadata": {
+    "key": "PROJ-123",
+    "status": "Closed",
+    "created": "2024-01-01 12:00:00",
+    "epic_link": "PROJ-100",
+    "issue_links": [
+      {
+        "type": "Blocks",
+        "direction": "outward",
+        "relation": "blocks",
+        "key": "PROJ-124",
+        "summary": "Linked ticket summary",
+        "status": "Open",
+        "issuetype": "Bug"
+      }
+    ]
+  },
   "content": "# Ticket Summary\n\nCleaned description...\n\n## Comments\n[2024-01-02] Max: Comment text",
   "raw_content": { "description": "Cleaned description...", "comments": [...] }
 }
 ```
+
+### Epic Link and Issue Links
+
+- **`epic_link`**: Key of the parent epic (e.g. `"PROJ-100"`), or `""` if the ticket has none. It is read from the Jira custom field `customfield_10100`. The field ID differs between Jira instances; if yours is different, set `JIRA_EPIC_LINK_FIELD` in your `.env`:
+
+  ```env
+  JIRA_EPIC_LINK_FIELD=customfield_10100
+  ```
+
+- **`issue_links`**: List of linked tickets (empty list if none). Each entry contains:
+
+  | Field | Meaning |
+  | ----- | ------- |
+  | `type` | Link type name, e.g. `Blocks`, `Relates` |
+  | `direction` | `outward` or `inward`, seen from the exported ticket |
+  | `relation` | Readable relation, e.g. `blocks` / `is blocked by` |
+  | `key`, `summary`, `status`, `issuetype` | Data of the linked ticket |
 
 ## 🔒 Security
 

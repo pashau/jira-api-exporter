@@ -23,6 +23,7 @@ RAG_FIELDS = [
     "issuetype",
     "priority",
     "labels",
+    "issuelinks",
 ]
 
 
@@ -84,7 +85,7 @@ class JiraClient:
                 "jql": jql,
                 "startAt": start_at,
                 "maxResults": self.config.max_results,
-                "fields": ",".join(RAG_FIELDS),
+                "fields": ",".join(RAG_FIELDS + [self.config.epic_link_field]),
             }
 
             logger.info(f"Abfrage: startAt={start_at}, maxResults={self.config.max_results}")

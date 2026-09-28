@@ -10,8 +10,51 @@ from .client import JiraClient
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_EPIC_LINK_FIELD = "customfield_10100"
 
-def build_rag_document(issue: Dict[str, Any]) -> Dict[str, Any]:
+
+def _extract_epic_link(fields: Dict[str, Any], epic_link_field: str) -> str:
+    """Liest den Epic Link (Custom Field) und gibt den Key des Epics zurück, sonst ''."""
+    value = fields.get(epic_link_field)
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return value.get("key") or value.get("value") or ""
+    return ""
+
+
+def _extract_issue_links(fields: Dict[str, Any]) -> List[Dict[str, str]]:
+    """
+    Wandelt 'issuelinks' in eine flache Liste um. Jeder Link hat in Jira entweder ein
+    'outwardIssue' (z.B. 'blocks') oder ein 'inwardIssue' (z.B. 'is blocked by').
+    """
+    links: List[Dict[str, str]] = []
+    for link in fields.get("issuelinks") or []:
+        link_type = link.get("type") or {}
+
+        if "outwardIssue" in link:
+            direction, target, relation = "outward", link["outwardIssue"], link_type.get("outward", "")
+        elif "inwardIssue" in link:
+            direction, target, relation = "inward", link["inwardIssue"], link_type.get("inward", "")
+        else:
+            continue
+
+        target_fields = target.get("fields") or {}
+        links.append(
+            {
+                "type": link_type.get("name", ""),
+                "direction": direction,
+                "relation": relation,
+                "key": target.get("key", ""),
+                "summary": TextCleaner.clean(target_fields.get("summary", "")),
+                "status": (target_fields.get("status") or {}).get("name", ""),
+                "issuetype": (target_fields.get("issuetype") or {}).get("name", ""),
+            }
+        )
+    return links
+
+
+def build_rag_document(issue: Dict[str, Any], epic_link_field: str = DEFAULT_EPIC_LINK_FIELD) -> Dict[str, Any]:
     """
     Transformiert ein Jira-Issue in ein RAG-optimiertes Dokument.
     """
@@ -72,6 +115,8 @@ def build_rag_document(issue: Dict[str, Any]) -> Dict[str, Any]:
             "issuetype": issuetype_name,
             "created": TextCleaner.format_timestamp(fields.get("created")),
             "labels": labels,
+            "epic_link": _extract_epic_link(fields, epic_link_field),
+            "issue_links": _extract_issue_links(fields),
         },
         "content": content,
         "raw_content": {
@@ -95,7 +140,7 @@ class RAGExporter:
 
         for issue in self.client.fetch_all_issues(self.jql):
             try:
-                doc = build_rag_document(issue)
+                doc = build_rag_document(issue, self.client.config.epic_link_field)
                 documents.append(doc)
                 logger.debug(f"Dokument erstellt für {doc['metadata']['key']}")
             except Exception as e:

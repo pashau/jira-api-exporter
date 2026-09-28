@@ -158,6 +158,8 @@ class JiraConfig:
     max_retries: int = 3
     retry_delay: float = 2.0
     timeout: int = 30
+    # Custom-Field-ID des "Epic Link" (instanzabhängig, Standard: customfield_10100)
+    epic_link_field: str = "customfield_10100"
     # Alle auszuführenden Exports. `jql`/`output_file` oben entsprechen dem ersten Job
     # (Abwärtskompatibilität).
     jobs: Tuple[ExportJob, ...] = ()
@@ -183,6 +185,7 @@ class JiraConfig:
             max_retries=int(os.getenv("JIRA_MAX_RETRIES", "3")),
             retry_delay=float(os.getenv("JIRA_RETRY_DELAY", "2.0")),
             timeout=int(os.getenv("JIRA_TIMEOUT", "30")),
+            epic_link_field=os.getenv("JIRA_EPIC_LINK_FIELD", "customfield_10100"),
             jobs=tuple(jobs),
         )
 
