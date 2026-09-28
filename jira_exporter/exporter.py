@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .cleaner import TextCleaner
 from .client import JiraClient
@@ -84,15 +84,16 @@ def build_rag_document(issue: Dict[str, Any]) -> Dict[str, Any]:
 class RAGExporter:
     """Exportiert Jira-Issues als RAG-optimiertes JSON."""
 
-    def __init__(self, client: JiraClient, output_path: str):
+    def __init__(self, client: JiraClient, output_path: str, jql: Optional[str] = None):
         self.client = client
         self.output_path = Path(output_path)
+        self.jql = jql  # None -> client verwendet config.jql
 
     def export(self) -> List[Dict[str, Any]]:
         """Lädt alle Issues und speichert als JSON."""
         documents: List[Dict[str, Any]] = []
 
-        for issue in self.client.fetch_all_issues():
+        for issue in self.client.fetch_all_issues(self.jql):
             try:
                 doc = build_rag_document(issue)
                 documents.append(doc)

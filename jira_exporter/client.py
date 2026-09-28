@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Any, Dict, Generator, List
+from typing import Any, Dict, Generator, List, Optional
 
 import requests
 from requests.exceptions import ConnectionError, SSLError, Timeout
@@ -67,18 +67,21 @@ class JiraClient:
 
         raise last_error or RuntimeError("Unbekannter Fehler")
 
-    def fetch_all_issues(self) -> Generator[Dict[str, Any], None, None]:
+    def fetch_all_issues(self, jql: Optional[str] = None) -> Generator[Dict[str, Any], None, None]:
         """
         Hole alle Issues via paginierte JQL-Suche.
         Yields jedes Issue einzeln für speichereffiziente Verarbeitung.
+
+        Ohne Angabe von `jql` wird `config.jql` verwendet.
         """
+        jql = jql or self.config.jql
         start_at = 0
         total_issues = 0
         first_request = True
 
         while True:
             params = {
-                "jql": self.config.jql,
+                "jql": jql,
                 "startAt": start_at,
                 "maxResults": self.config.max_results,
                 "fields": ",".join(RAG_FIELDS),

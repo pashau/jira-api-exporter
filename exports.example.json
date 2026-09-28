@@ -1,0 +1,13 @@
+[
+  {
+    "jql": "project = \"PROJ\" AND status = Closed",
+    "output_file": "proj_closed.json"
+  },
+  {
+    "jql": "project = \"OPS\" AND issuetype = Bug ORDER BY created DESC",
+    "output_file": "ops_bugs.json"
+  },
+  {
+    "jql": "project = \"DOCS\""
+  }
+]
