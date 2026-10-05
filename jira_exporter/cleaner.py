@@ -18,13 +18,18 @@ JIRA_MARKUP_PATTERNS = [
     r"\{table.*?\}",
     r"!\[[^\]]*\]\([^)]*\)",
     r"!#[^)]*\)",
-    r"[^a-zA-Z0-9äöüÄÖÜß]\*\*[^*]+\*\*",
-    r"[^a-zA-Z0-9äöüÄÖÜß]\*[^*]+\*",
-    r"[^a-zA-Z0-9äöüÄÖÜß]-[^-]+-",
     r"\n{3,}",
 ]
 
 HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+
+# Inline-Hervorhebungen (*bold*, **bold**): nur das Markup entfernen, den
+# eingeschlossenen Text behalten. Begrenzt auf eine Zeile (kein \n im Inhalt),
+# damit nicht versehentlich der Text zwischen zwei unzusammenhängenden
+# *Label:*-Zeilen verschluckt wird. (?<!\w)/(?!\w) verhindert Treffer mitten in
+# Wörtern/Zahlen (z. B. "60°-120°").
+BOLD_PATTERN = re.compile(r"(?<!\w)\*\*([^\n*]+?)\*\*(?!\w)")
+ITALIC_PATTERN = re.compile(r"(?<!\w)\*([^\n*]+?)\*(?!\w)")
 JIRA_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\|([^)]+)\)")
 USER_MENTION_PATTERN = re.compile(r"~([a-zA-Z0-9._-]+)")
 
@@ -44,6 +49,11 @@ class TextCleaner:
 
         for pattern in JIRA_MARKUP_PATTERNS:
             cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE | re.DOTALL)
+
+        # Erst ** (bold), dann * (italic) - sonst würde die Italic-Regex die
+        # beiden Sterne eines Bold-Paares als zwei Italic-Treffer missverstehen.
+        cleaned = BOLD_PATTERN.sub(r"\1", cleaned)
+        cleaned = ITALIC_PATTERN.sub(r"\1", cleaned)
 
         cleaned = JIRA_LINK_PATTERN.sub(r"\1", cleaned)
         cleaned = USER_MENTION_PATTERN.sub(r"@\1", cleaned)
@@ -66,3 +76,4 @@ class TextCleaner:
         if not ts:
             return "Unbekannt"
         return ts.replace("T", " ").split(".")[0].split("+")[0]
+        
