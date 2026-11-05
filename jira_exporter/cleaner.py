@@ -62,6 +62,47 @@ class TextCleaner:
         return cleaned
 
     @staticmethod
+    def clean_preserve_lines(text: Optional[str]) -> str:
+        """
+        Entfernt Markup und HTML, erhält aber Zeilenumbrüche.
+
+        Das ist besonders wichtig für strukturierte Inhalte wie:
+        - Gherkin/Cucumber Scenarios
+        - Manual Test Steps
+        - Generic Test Definitions
+        """
+        if not text:
+            return ""
+
+        cleaned = str(text)
+        cleaned = html.unescape(cleaned)
+
+        # HTML-Blocktrenner in Zeilenumbrüche übersetzen, bevor generische Tags entfernt werden.
+        cleaned = re.sub(r"(?i)<\s*br\s*/?\s*>", "\n", cleaned)
+        cleaned = re.sub(r"(?i)</\s*p\s*>", "\n", cleaned)
+        cleaned = re.sub(r"(?i)</\s*div\s*>", "\n", cleaned)
+        cleaned = re.sub(r"(?i)</\s*li\s*>", "\n", cleaned)
+        cleaned = HTML_TAG_PATTERN.sub(" ", cleaned)
+
+        for pattern in JIRA_MARKUP_PATTERNS:
+            cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE | re.DOTALL)
+
+        cleaned = BOLD_PATTERN.sub(r"\1", cleaned)
+        cleaned = ITALIC_PATTERN.sub(r"\1", cleaned)
+        cleaned = JIRA_LINK_PATTERN.sub(r"\1", cleaned)
+        cleaned = USER_MENTION_PATTERN.sub(r"@\1", cleaned)
+
+        # Horizontale Whitespaces normalisieren, Zeilenumbrüche erhalten.
+        cleaned = re.sub(r"[ \t\r\f\v]+", " ", cleaned)
+        lines = [line.strip() for line in cleaned.splitlines()]
+        cleaned = "\n".join(lines)
+
+        # Mehr als zwei Leerzeilen reduzieren.
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+        return cleaned
+
+    @staticmethod
     def extract_text_from_rendered(rendered: dict, field: str) -> str:
         """Extrahiert Text aus Jiras renderedFields."""
         if rendered and field in rendered:
@@ -71,9 +112,17 @@ class TextCleaner:
         return ""
 
     @staticmethod
+    def extract_text_from_rendered_preserve_lines(rendered: dict, field: str) -> str:
+        """Extrahiert Text aus Jiras renderedFields und erhält Zeilenumbrüche."""
+        if rendered and field in rendered:
+            html_content = rendered[field]
+            if html_content:
+                return TextCleaner.clean_preserve_lines(html_content)
+        return ""
+
+    @staticmethod
     def format_timestamp(ts: Optional[str]) -> str:
         """Formatiert ISO-Timestamp für menschliche Lesbarkeit."""
         if not ts:
             return "Unbekannt"
         return ts.replace("T", " ").split(".")[0].split("+")[0]
-        

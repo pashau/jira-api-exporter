@@ -27,6 +27,19 @@ RAG_FIELDS = [
 ]
 
 
+def _unique_preserve_order(values: List[str]) -> List[str]:
+    """Entfernt Duplikate und erhält die Reihenfolge."""
+    seen = set()
+    result = []
+
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+
+    return result
+
+
 class JiraClient:
     """REST API Client für Jira Data Center mit Bearer-Token-Auth."""
 
@@ -68,6 +81,16 @@ class JiraClient:
 
         raise last_error or RuntimeError("Unbekannter Fehler")
 
+    def _fields_for_request(self) -> List[str]:
+        """
+        Baut die Feldliste für Jira Search API.
+
+        Neben den Standard-RAG-Feldern werden das Epic-Link-Feld und alle über
+        JIRA_CUSTOM_FIELDS konfigurierten Felder abgefragt.
+        """
+        extra_fields = [self.config.epic_link_field, *self.config.custom_fields.values()]
+        return _unique_preserve_order(RAG_FIELDS + extra_fields)
+
     def fetch_all_issues(self, jql: Optional[str] = None) -> Generator[Dict[str, Any], None, None]:
         """
         Hole alle Issues via paginierte JQL-Suche.
@@ -85,7 +108,10 @@ class JiraClient:
                 "jql": jql,
                 "startAt": start_at,
                 "maxResults": self.config.max_results,
-                "fields": ",".join(RAG_FIELDS + [self.config.epic_link_field]),
+                "fields": ",".join(self._fields_for_request()),
+                # renderedFields liefert HTML-gerenderte Feldinhalte.
+                # Das ist hilfreich für Rich-Text-Customfields und Jira-Markup.
+                "expand": "renderedFields",
             }
 
             logger.info(f"Abfrage: startAt={start_at}, maxResults={self.config.max_results}")
@@ -115,3 +141,4 @@ class JiraClient:
 
             start_at += len(issues)
             logger.debug(f"Fortschritt: {min(start_at, total_issues)}/{total_issues}")
+            

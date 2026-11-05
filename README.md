@@ -2,27 +2,32 @@
 
 [![CI Status](https://github.com/pashau/jira-api-exporter/actions/workflows/lint.yml/badge.svg)](https://github.com/pashau/jira-api-exporter/actions)
 
-Export Jira tickets for RAG pipelines (Retrieval-Augmented Generation). The script loads tickets via one or more JQL queries, cleans the text from markup, and saves each result as clean JSON for vector databases.
+Export Jira tickets for RAG pipelines. The tool loads tickets via one or more JQL queries, cleans Jira markup/HTML, enriches metadata, and writes JSON files suitable for vector databases or downstream processing.
 
-## 🐳 Docker (Recommended)
+## Features
 
-The easiest way to run the tool is with Docker. Make sure your `.env` file exists:
+- Export Jira issues via JQL
+- Support for single or multiple exports
+- Clean `summary`, `description`, and `comments`
+- Export issue metadata such as status, priority, labels, epic link, and issue links
+- Configurable Jira custom fields via `.env`
+- Xray-compatible export of test definitions such as:
+  - Cucumber Scenario
+  - Manual Test Steps
+  - Generic Test Definition
+- Empty configured custom fields are skipped automatically
+- Docker and local Python execution supported
+
+## Quick Start
+
+### Docker
 
 ```bash
-# 1. Build the image (one-time setup)
 docker build -t jira-rag-exporter .
-
-# 2. Start the container (loads .env automatically)
-docker run --env-file .env jira-rag-exporter
-```
-
-*Note: The result is saved inside the `jira-exports/` folder by default. To persist it, mount an output directory:*
-
-```bash
 docker run --env-file .env -v $(pwd)/jira-exports:/app/jira-exports jira-rag-exporter
 ```
 
-*Multiple exports:* if you use `JIRA_EXPORTS_FILE` (see [Multiple Exports](#multiple-exports)), also mount the file into the container:
+If you use `JIRA_EXPORTS_FILE`, mount it as well:
 
 ```bash
 docker run --env-file .env \
@@ -32,96 +37,139 @@ docker run --env-file .env \
   jira-rag-exporter
 ```
 
-## 💻 Local Installation
-
-If you do not want to use a container environment, you can run the tool directly with Python:
-
-### 1. Setup
-
-Create a virtual environment and install the dependencies:
+### Local Python
 
 ```bash
-# Create virtual environment
-python -m venv .venv # OR with Windows launcher: `py -m venv .venv`
+python -m venv .venv
 
-# Activate (Windows PowerShell)
+# Windows PowerShell
 .\.venv\Scripts\activate
 
-# Activate (macOS/Linux)
+# macOS/Linux
 source .venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
+python -m jira_exporter
 ```
 
-### 2. Configuration
+On Windows you can also run:
 
-Create a `.env` file in the project root with your credentials:
+```bash
+py -m jira_exporter
+```
+
+The tool logs the number of matching tickets, writes the export files, and returns exit code `1` if any configured export fails.
+
+## Configuration
+
+Create a `.env` file in the project root (copy `.env.example`).
+
+### Single Export
+
+Use `JIRA_JQL` and optionally `JIRA_OUTPUT_FILE`.
 
 ```env
-JIRA_DOMAIN=https://your-company.atlassian.net
-JIRA_PAT_TOKEN=YOUR_TOKEN_HERE
 JIRA_JQL=project = "PROJ" AND status = Closed
+JIRA_OUTPUT_FILE=proj_closed.json
 ```
 
-*Note:* If you do not set `JIRA_OUTPUT_FILE`, the filename is derived automatically from the JQL query and saved in the `jira-exports/` directory (e.g. `jira-exports/jira_myproj_story_tickets.json`).
+If `JIRA_OUTPUT_FILE` is omitted, the tool derives a filename from the JQL and writes it to `jira-exports/`.
 
-### Multiple Exports
+## Multiple Exports
 
-To export several JQL queries into separate files in a single run, provide a list of `jql` / `output_file` pairs. The easiest way is a JSON file (copy `exports.example.json` to `exports.json`):
+Use `JIRA_EXPORTS_FILE` for several JQL queries in one run.
 
-```json
-[
-  { "jql": "project = \"PROJ\" AND status = Closed", "output_file": "proj_closed.json" },
-  { "jql": "project = \"OPS\" AND issuetype = Bug ORDER BY created DESC", "output_file": "ops_bugs.json" },
-  { "jql": "project = \"DOCS\"" }
-]
-```
-
-Then reference it in your `.env`:
+`.env`:
 
 ```env
 JIRA_EXPORTS_FILE=exports.json
 ```
 
-Alternatively, pass the same JSON list inline via `JIRA_EXPORTS='[{"jql": "project = PROJ", "output_file": "proj.json"}]'`.
+`exports.json`:
 
-Which variable wins (highest priority first):
-
-| Priority | Variable | Result |
-| -------- | -------- | ------ |
-| 1 | `JIRA_EXPORTS_FILE` | Path to a JSON file with a list of exports |
-| 2 | `JIRA_EXPORTS` | The same JSON list, inline |
-| 3 | `JIRA_JQL` (+ optional `JIRA_OUTPUT_FILE`) | A single export (previous behavior) |
-
-If `JIRA_EXPORTS_FILE` or `JIRA_EXPORTS` is set, `JIRA_JQL` and `JIRA_OUTPUT_FILE` are ignored (a warning is logged).
-
-Rules and behavior:
-
-- **`jql`** is required for every entry.
-- **`output_file`** is optional. If omitted, the filename is derived from the JQL (see the note above).
-- A bare filename such as `proj_closed.json` is saved in `jira-exports/`. Paths that include a directory are used as given.
-- Every entry must resolve to a **unique** output file. Duplicates abort the run at startup instead of silently overwriting each other.
-- Exports run sequentially and independently: if one fails, the remaining exports still run. A summary is logged at the end and the exit code is `1` if any export failed. A failed export does not overwrite its previous output file.
-
-### 3. Run
-
-Start the export using the module command:
-
-```bash
-python -m jira_exporter
-# py -m jira_exporter (Windows)
+```json
+[
+  {
+    "jql": "project = \"PROJ\" AND status = Closed",
+    "output_file": "proj_closed.json"
+  },
+  {
+    "jql": "project = \"OPS\" AND issuetype = Bug ORDER BY created DESC",
+    "output_file": "ops_bugs.json"
+  },
+  {
+    "jql": "project = \"DOCS\""
+  }
+]
 ```
 
-For each export, the script prints the **number of matching tickets** before downloading and saves the JSON result in `jira-exports/` (or the configured output path).
+Alternatively, provide the same JSON inline:
 
-## 📄 Output Format
+```env
+JIRA_EXPORTS=[{"jql":"project = PROJ","output_file":"proj.json"}]
+```
 
-The JSON contains three main sections for each ticket:
+Priority order:
 
-1. **`metadata`**: Filterable data such as `key`, `status`, `priority`, `created`, the `epic_link` and the `issue_links`.
-2. **`content`**: The cleaned text for embeddings (summary + description + comments).
-3. **`raw_content`**: The unchanged but cleaned text of the description and comments.
+| Priority | Variable | Result |
+| --- | --- | --- |
+| 1 | `JIRA_EXPORTS_FILE` | JSON file with export jobs |
+| 2 | `JIRA_EXPORTS` | Inline JSON export jobs |
+| 3 | `JIRA_JQL` + `JIRA_OUTPUT_FILE` | Single export |
+
+If `JIRA_EXPORTS_FILE` or `JIRA_EXPORTS` is set, `JIRA_JQL` and `JIRA_OUTPUT_FILE` are ignored.
+
+## Custom Fields
+
+Additional Jira fields can be exported generically using `JIRA_CUSTOM_FIELDS`.
+
+Recommended format:
+
+```env
+JIRA_CUSTOM_FIELDS=cucumber_scenario=cf[10204],manual_test_steps=cf[10206],generic_test_definition=cf[10205]
+```
+
+Supported field ID formats:
+
+```text
+cf[10204]
+customfield_10204
+10204
+```
+
+### Xray Test Fields
+
+Example for Xray test definitions:
+
+```env
+JIRA_CUSTOM_FIELDS=cucumber_scenario=cf[10204],manual_test_steps=cf[10206],generic_test_definition=cf[10205]
+```
+
+Meaning:
+
+| Alias | Jira/Xray Field |
+| --- | --- |
+| `cucumber_scenario` | Cucumber Scenario |
+| `manual_test_steps` | Manual Test Steps |
+| `generic_test_definition` | Generic Test Definition |
+
+Configured custom fields are exported only when their cleaned value is not empty. Empty values such as `""`, `null`, empty lists, or whitespace-only text are skipped.
+
+This means a ticket with only a Cucumber Scenario will export only `cucumber_scenario`; empty Manual or Generic definitions will not appear in `metadata`, `content`, or `raw_content`.
+
+## `.env` Format Notes
+
+Keep complex values on one line. Do not write multiline JSON in `.env`.
+
+## Output Format
+
+The output is a JSON array. Each ticket contains:
+
+| Section | Description |
+| --- | --- |
+| `metadata` | Filterable issue data |
+| `content` | Clean text for embeddings |
+| `raw_content` | Cleaned source fields for inspection/debugging |
 
 Example:
 
@@ -129,45 +177,76 @@ Example:
 {
   "metadata": {
     "key": "PROJ-123",
-    "status": "Closed",
+    "summary": "Example Xray test",
+    "status": "Open",
+    "status_category": "To Do",
+    "resolution": "",
+    "priority": "Medium",
+    "issuetype": "Test",
     "created": "2024-01-01 12:00:00",
+    "labels": ["xray"],
     "epic_link": "PROJ-100",
-    "issue_links": [
-      {
-        "type": "Blocks",
-        "direction": "outward",
-        "relation": "blocks",
-        "key": "PROJ-124",
-        "summary": "Linked ticket summary",
-        "status": "Open",
-        "issuetype": "Bug"
+    "issue_links": [],
+    "custom_fields": {
+      "cucumber_scenario": {
+        "field_id": "customfield_10204",
+        "label": "Cucumber Scenario",
+        "value": "Feature: Login\nScenario: Successful login\nGiven ..."
       }
-    ]
+    }
   },
-  "content": "# Ticket Summary\n\nCleaned description...\n\n## Comments\n[2024-01-02] Max: Comment text",
-  "raw_content": { "description": "Cleaned description...", "comments": [...] }
+  "content": "# Example Xray test\n\n## Cucumber Scenario\n\nFeature: Login\nScenario: Successful login\nGiven ...",
+  "raw_content": {
+    "description": "",
+    "comments": [],
+    "custom_fields": {
+      "cucumber_scenario": {
+        "field_id": "customfield_10204",
+        "label": "Cucumber Scenario",
+        "value": "Feature: Login\nScenario: Successful login\nGiven ...",
+        "raw": "Feature: Login\nScenario: Successful login\nGiven ..."
+      }
+    }
+  }
 }
 ```
 
-### Epic Link and Issue Links
+## Epic Link
 
-- **`epic_link`**: Key of the parent epic (e.g. `"PROJ-100"`), or `""` if the ticket has none. It is read from the Jira custom field `customfield_10100`. The field ID differs between Jira instances; if yours is different, set `JIRA_EPIC_LINK_FIELD` in your `.env`:
+The epic link field differs between Jira instances. Configure it explicitly if needed:
 
-  ```env
-  JIRA_EPIC_LINK_FIELD=customfield_10100
-  ```
+```env
+JIRA_EPIC_LINK_FIELD=customfield_10100
+```
 
-- **`issue_links`**: List of linked tickets (empty list if none). Each entry contains:
+The value is exported as:
 
-  | Field | Meaning |
-  | ----- | ------- |
-  | `type` | Link type name, e.g. `Blocks`, `Relates` |
-  | `direction` | `outward` or `inward`, seen from the exported ticket |
-  | `relation` | Readable relation, e.g. `blocks` / `is blocked by` |
-  | `key`, `summary`, `status`, `issuetype` | Data of the linked ticket |
+```json
+"epic_link": "PROJ-100"
+```
 
-## 🔒 Security
+If no epic link exists, the value is an empty string.
 
-- The token is loaded **only** via environment variables (`.env`).
-- The `.env` file is included in `.gitignore` and must **never** be committed to version control.
-- Logs do not contain secrets by default (`INFO` level).
+## Issue Links
+
+Linked issues are exported under `metadata.issue_links`.
+
+Each link contains:
+
+| Field | Description |
+| --- | --- |
+| `type` | Jira link type, e.g. `Blocks` |
+| `direction` | `outward` or `inward` |
+| `relation` | Human-readable relation |
+| `key` | Linked issue key |
+| `summary` | Linked issue summary |
+| `status` | Linked issue status |
+| `issuetype` | Linked issue type |
+
+## Security
+
+- Store credentials only in `.env` or environment variables.
+- Never commit `.env`.
+- `.env` is ignored by Git.
+- Logs run at `INFO` level by default and should not expose the token.
+- Avoid enabling debug logging in shared environments.

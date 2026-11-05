@@ -4,9 +4,9 @@ import json
 import logging
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from dotenv import load_dotenv
 
@@ -43,6 +43,108 @@ def _derive_filename_from_jql(jql: str) -> str:
 
     # Dateinamen zusammenbauen
     return f"{'_'.join(parts)}_tickets.json"
+
+
+def _normalize_custom_field_id(raw: str) -> str:
+    """
+    Normalisiert Jira Custom Field IDs.
+
+    Akzeptiert:
+    - customfield_10204
+    - cf[10204]
+    - 10204
+
+    Gibt für Custom Fields immer customfield_<id> zurück.
+    Andere Feldnamen werden unverändert zurückgegeben, damit die Funktion generisch bleibt.
+    """
+    value = str(raw).strip()
+
+    if not value:
+        raise ValueError("Leere Custom-Field-ID ist nicht erlaubt.")
+
+    cf_match = re.fullmatch(r"cf\[(\d+)\]", value, re.IGNORECASE)
+    if cf_match:
+        return f"customfield_{cf_match.group(1)}"
+
+    numeric_match = re.fullmatch(r"\d+", value)
+    if numeric_match:
+        return f"customfield_{value}"
+
+    customfield_match = re.fullmatch(r"customfield_(\d+)", value, re.IGNORECASE)
+    if customfield_match:
+        return f"customfield_{customfield_match.group(1)}"
+
+    # Bewusst generisch: auch Standard-Jira-Felder oder App-Felder zulassen.
+    return value
+
+
+def _parse_custom_fields(raw: str) -> Dict[str, str]:
+    """
+    Parst JIRA_CUSTOM_FIELDS aus der Umgebung.
+
+    Unterstützte Formate:
+
+    1. JSON-Objekt:
+       {"cucumber_scenario": "cf[10204]", "manual_test_steps": "customfield_10206"}
+
+    2. Komma-/Semikolon-getrennte Kurzform:
+       cucumber_scenario=cf[10204],manual_test_steps=cf[10206]
+    """
+    if not raw or not raw.strip():
+        return {}
+
+    raw = raw.strip()
+
+    # Zuerst JSON versuchen.
+    try:
+        parsed: Any = json.loads(raw)
+    except json.JSONDecodeError:
+        parsed = None
+
+    if parsed is not None:
+        if not isinstance(parsed, dict):
+            raise ValueError("JIRA_CUSTOM_FIELDS muss ein JSON-Objekt sein, z.B. {\"name\": \"cf[12345]\"}.")
+
+        custom_fields: Dict[str, str] = {}
+        for alias, field_id in parsed.items():
+            if not isinstance(alias, str) or not alias.strip():
+                raise ValueError("JIRA_CUSTOM_FIELDS enthält einen ungültigen Alias.")
+            if not isinstance(field_id, str) or not field_id.strip():
+                raise ValueError(f"JIRA_CUSTOM_FIELDS: Feld-ID für Alias '{alias}' ist ungültig.")
+
+            custom_fields[alias.strip()] = _normalize_custom_field_id(field_id)
+
+        return custom_fields
+
+    # Fallback: key=value,key=value oder key:value;key:value
+    entries = re.split(r"\s*[,;]\s*", raw)
+    custom_fields = {}
+
+    for entry in entries:
+        if not entry:
+            continue
+
+        if "=" in entry:
+            alias, field_id = entry.split("=", 1)
+        elif ":" in entry:
+            alias, field_id = entry.split(":", 1)
+        else:
+            raise ValueError(
+                "JIRA_CUSTOM_FIELDS Kurzform muss Einträge als alias=field_id enthalten, "
+                f"ungültiger Eintrag: '{entry}'"
+            )
+
+        alias = alias.strip()
+        field_id = field_id.strip()
+
+        if not alias:
+            raise ValueError(f"JIRA_CUSTOM_FIELDS enthält einen Eintrag ohne Alias: '{entry}'")
+        if not field_id:
+            raise ValueError(f"JIRA_CUSTOM_FIELDS enthält einen Eintrag ohne Feld-ID: '{entry}'")
+
+        custom_fields[alias] = _normalize_custom_field_id(field_id)
+
+    return custom_fields
 
 
 @dataclass(frozen=True)
@@ -160,6 +262,8 @@ class JiraConfig:
     timeout: int = 30
     # Custom-Field-ID des "Epic Link" (instanzabhängig, Standard: customfield_10100)
     epic_link_field: str = "customfield_10100"
+    # Generische zusätzliche Custom Fields, z.B. Xray Cucumber Scenario / Manual Steps / Generic Test Definition.
+    custom_fields: Dict[str, str] = field(default_factory=dict)
     # Alle auszuführenden Exports. `jql`/`output_file` oben entsprechen dem ersten Job
     # (Abwärtskompatibilität).
     jobs: Tuple[ExportJob, ...] = ()
@@ -174,6 +278,13 @@ class JiraConfig:
             raise ValueError("Fehler: JIRA_DOMAIN und JIRA_PAT_TOKEN müssen als Umgebungsvariablen gesetzt sein.")
 
         jobs = load_export_jobs()
+        custom_fields = _parse_custom_fields(os.getenv("JIRA_CUSTOM_FIELDS", ""))
+
+        if custom_fields:
+            logger.info(
+                "Zusätzliche Custom Fields konfiguriert: "
+                + ", ".join(f"{alias}={field_id}" for alias, field_id in custom_fields.items())
+            )
 
         return cls(
             domain=domain.rstrip("/"),
@@ -185,10 +296,12 @@ class JiraConfig:
             max_retries=int(os.getenv("JIRA_MAX_RETRIES", "3")),
             retry_delay=float(os.getenv("JIRA_RETRY_DELAY", "2.0")),
             timeout=int(os.getenv("JIRA_TIMEOUT", "30")),
-            epic_link_field=os.getenv("JIRA_EPIC_LINK_FIELD", "customfield_10100"),
+            epic_link_field=_normalize_custom_field_id(os.getenv("JIRA_EPIC_LINK_FIELD", "customfield_10100")),
+            custom_fields=custom_fields,
             jobs=tuple(jobs),
         )
 
     @property
     def search_url(self) -> str:
         return f"{self.domain}/rest/api/2/search"
+    
