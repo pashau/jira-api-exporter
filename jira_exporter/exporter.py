@@ -329,4 +329,3 @@ class RAGExporter:
 
         logger.info(f"✓ {len(documents)} Dokumente exportiert → {self.output_path}")
         return documents
-    

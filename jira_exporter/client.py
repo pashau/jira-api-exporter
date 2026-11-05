@@ -141,4 +141,3 @@ class JiraClient:
 
             start_at += len(issues)
             logger.debug(f"Fortschritt: {min(start_at, total_issues)}/{total_issues}")
-            

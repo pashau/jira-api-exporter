@@ -103,7 +103,7 @@ def _parse_custom_fields(raw: str) -> Dict[str, str]:
 
     if parsed is not None:
         if not isinstance(parsed, dict):
-            raise ValueError("JIRA_CUSTOM_FIELDS muss ein JSON-Objekt sein, z.B. {\"name\": \"cf[12345]\"}.")
+            raise ValueError('JIRA_CUSTOM_FIELDS muss ein JSON-Objekt sein, z.B. {"name": "cf[12345]"}.')
 
         custom_fields: Dict[str, str] = {}
         for alias, field_id in parsed.items():
@@ -130,8 +130,7 @@ def _parse_custom_fields(raw: str) -> Dict[str, str]:
             alias, field_id = entry.split(":", 1)
         else:
             raise ValueError(
-                "JIRA_CUSTOM_FIELDS Kurzform muss Einträge als alias=field_id enthalten, "
-                f"ungültiger Eintrag: '{entry}'"
+                f"JIRA_CUSTOM_FIELDS Kurzform muss Einträge als alias=field_id enthalten, ungültiger Eintrag: '{entry}'"
             )
 
         alias = alias.strip()
@@ -304,4 +303,3 @@ class JiraConfig:
     @property
     def search_url(self) -> str:
         return f"{self.domain}/rest/api/2/search"
-    

@@ -243,6 +243,33 @@ Each link contains:
 | `status` | Linked issue status |
 | `issuetype` | Linked issue type |
 
+## Code Quality / Ruff
+
+The project uses Ruff for static code analysis and formatting checks. The CI runs both:
+
+```bash
+ruff check .
+ruff format --check .
+```
+
+Install the development requirements first:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+To automatically format the code, run:
+
+```bash
+ruff format .
+```
+
+To apply safe auto-fixes where possible, run:
+
+```bash
+ruff check . --fix
+```
+
 ## Security
 
 - Store credentials only in `.env` or environment variables.
