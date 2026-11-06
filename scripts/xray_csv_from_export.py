@@ -47,20 +47,21 @@ def clean_text(value: Any) -> str:
     return str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
-def csv_cell(value: Any) -> str:
+def csv_cell(value: object, newline_token: str = " ⏎ ") -> str:
     """
-    Make a value safe for Xray CSV import.
+    Make text safe for Xray CSV import.
 
-    Important:
-    - No embedded line breaks
-    - No tabs
-    - No repeated whitespace
-    - Preserve non-ASCII characters
+    No embedded real line breaks.
+    Keeps structure visible via newline_token.
     """
-    text = clean_text(value)
-    text = text.replace("\n", " ")
+    if value is None:
+        return ""
+
+    text = str(value)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\n", newline_token)
     text = text.replace("\t", " ")
-    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[ ]{2,}", " ", text)
     return text.strip()
 
 
@@ -172,76 +173,55 @@ def split_step_line(line: str) -> list[str]:
     return [line]
 
 
+SCENARIO_START_RE = re.compile(r"^\s*Scenario(?: Outline)?:", re.IGNORECASE)
+
+
 def parse_gherkin_to_manual_steps(value: str) -> list[dict[str, str]]:
     """
-    Converts Gherkin/Cucumber scenario text to manual steps.
+    Convert Gherkin/Cucumber text into Xray Manual Test Steps.
 
-    Mapping:
-    - Given / When / And / But -> Action
-    - Then -> Expected Result
-    - Other relevant lines become Action
+    Rules:
+    - Feature/preamble block becomes the first manual step.
+    - Each Scenario or Scenario Outline block becomes one manual step.
+    - Given/When/Then/And/But keywords are preserved.
+    - Examples tables stay inside the Scenario Outline step.
     """
     value = clean_text(value)
     if not value:
         return []
 
+    lines = value.splitlines()
+
+    blocks: list[list[str]] = []
+    current_block: list[str] = []
+
+    for line in lines:
+        if SCENARIO_START_RE.match(line):
+            if current_block:
+                blocks.append(current_block)
+            current_block = [line]
+        else:
+            current_block.append(line)
+
+    if current_block:
+        blocks.append(current_block)
+
     steps: list[dict[str, str]] = []
 
-    ignored_prefixes = (
-        "feature:",
-        "scenario:",
-        "scenario outline:",
-        "background:",
-        "examples:",
-        "@",
-    )
-
-    for raw_line in value.splitlines():
-        line = raw_line.strip()
-        if not line:
+    for block in blocks:
+        block_text = "\n".join(block).strip()
+        if not block_text:
             continue
 
-        lower = line.lower()
+        steps.append(
+            {
+                "action": block_text,
+                "data": "",
+                "expected": "",
+            }
+        )
 
-        if lower.startswith(ignored_prefixes):
-            continue
-
-        # Skip Gherkin example tables.
-        if line.startswith("|") and line.endswith("|"):
-            continue
-
-        keyword_match = re.match(r"^(given|when|then|and|but)\b\s*(.*)$", line, re.IGNORECASE)
-
-        if keyword_match:
-            keyword = keyword_match.group(1).lower()
-            text = keyword_match.group(2).strip() or line
-
-            if keyword == "then":
-                steps.append(
-                    {
-                        "action": "",
-                        "data": "",
-                        "expected": text,
-                    }
-                )
-            else:
-                steps.append(
-                    {
-                        "action": text,
-                        "data": "",
-                        "expected": "",
-                    }
-                )
-        else:
-            steps.append(
-                {
-                    "action": line,
-                    "data": "",
-                    "expected": "",
-                }
-            )
-
-    return compact_expected_only_steps(steps)
+    return steps
 
 
 def compact_expected_only_steps(steps: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -312,9 +292,10 @@ def extract_steps(doc: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
 
 
 def build_rows(
-    documents: list[dict[str, Any]],
+    documents: list[dict[str, object]],
     summary_prefix: str,
     include_empty_tests: bool,
+    repeat_required_fields: bool = False,
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
 
@@ -323,19 +304,23 @@ def build_rows(
             continue
 
         metadata = doc.get("metadata", {})
-        source_key = csv_cell(metadata.get("key"))
+        raw_content = doc.get("raw_content", {})
 
-        if not source_key:
+        if not isinstance(metadata, dict):
+            continue
+        if not isinstance(raw_content, dict):
+            raw_content = {}
+
+        source_key = csv_cell(metadata.get("key"))
+        summary = csv_cell(metadata.get("summary"))
+
+        if not source_key or not summary:
             continue
 
-        summary = csv_cell(metadata.get("summary"))
         if summary_prefix:
             summary = csv_cell(f"{summary_prefix}{summary}")
 
-        if not summary:
-            continue
-
-        description = csv_cell(doc.get("raw_content", {}).get("description")) or csv_cell(doc.get("content"))
+        description = csv_cell(raw_content.get("description")) or csv_cell(doc.get("content"))
         labels = csv_cell(normalize_labels(metadata.get("labels")))
 
         step_source, steps = extract_steps(doc)
@@ -343,24 +328,26 @@ def build_rows(
         if not steps and include_empty_tests:
             steps = [{"action": "Manual test step", "data": "", "expected": ""}]
 
-        for step in steps:
-            action = required_action(step.get("action"))
+        for step_index, step in enumerate(steps, start=1):
+            action = csv_cell(step.get("action"))
             data = csv_cell(step.get("data"))
             expected = csv_cell(step.get("expected"))
 
             if not action:
-                continue
+                action = "Manual test step"
+
+            is_first_row_for_test = step_index == 1
 
             rows.append(
                 {
                     "Test Case Identifier": source_key,
-                    "Summary": summary,
-                    "Description": description,
-                    "Test Type": DEFAULT_TEST_TYPE,
+                    "Summary": summary if is_first_row_for_test or repeat_required_fields else "",
+                    "Description": description if is_first_row_for_test or repeat_required_fields else "",
+                    "Test Type": DEFAULT_TEST_TYPE if is_first_row_for_test or repeat_required_fields else "",
                     "Action": action,
                     "Data": data,
                     "Expected Result": expected,
-                    "Labels": labels,
+                    "Labels": labels if is_first_row_for_test or repeat_required_fields else "",
                     "Source Step Field": csv_cell(step_source),
                 }
             )
@@ -416,6 +403,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also export Test issues without any step content as empty Manual tests.",
     )
+    parser.add_argument(
+        "--repeat-required-fields",
+        action="store_true",
+        help="Repeat Summary, Description, Test Type and Labels on every step row.",
+    )
 
     return parser.parse_args()
 
@@ -431,6 +423,7 @@ def main() -> None:
         documents=documents,
         summary_prefix=args.summary_prefix,
         include_empty_tests=args.include_empty_tests,
+        repeat_required_fields=args.repeat_required_fields,
     )
     write_csv(output_path, rows)
 
