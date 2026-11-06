@@ -46,6 +46,30 @@ def clean_text(value: Any) -> str:
         return ""
     return str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
 
+def csv_cell(value: Any) -> str:
+    """
+    Make a value safe for Xray CSV import.
+
+    Important:
+    - No embedded line breaks
+    - No tabs
+    - No repeated whitespace
+    - Preserve non-ASCII characters
+    """
+    text = clean_text(value)
+    text = text.replace("\n", " ")
+    text = text.replace("\t", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+def required_action(value: Any) -> str:
+    """
+    Xray requires Action.
+    If a converted step has only an expected result, provide a generic action.
+    """
+    action = csv_cell(value)
+    return action if action else "Verify expected result"
+
 
 def get_custom_field_value(doc: dict[str, Any], alias: str) -> str:
     """
@@ -297,33 +321,45 @@ def build_rows(
             continue
 
         metadata = doc.get("metadata", {})
-        source_key = clean_text(metadata.get("key"))
-        summary = clean_text(metadata.get("summary"))
+        source_key = csv_cell(metadata.get("key"))
 
+        if not source_key:
+            continue
+
+        summary = csv_cell(metadata.get("summary"))
         if summary_prefix:
-            summary = f"{summary_prefix}{summary}"
+            summary = csv_cell(f"{summary_prefix}{summary}")
 
-        description = clean_text(doc.get("raw_content", {}).get("description")) or clean_text(doc.get("content"))
+        if not summary:
+            continue
 
-        labels = normalize_labels(metadata.get("labels"))
+        description = csv_cell(doc.get("raw_content", {}).get("description")) or csv_cell(doc.get("content"))
+        labels = csv_cell(normalize_labels(metadata.get("labels")))
 
         step_source, steps = extract_steps(doc)
 
         if not steps and include_empty_tests:
-            steps = [{"action": "", "data": "", "expected": ""}]
+            steps = [{"action": "Manual test step", "data": "", "expected": ""}]
 
-        for step_index, step in enumerate(steps, start=1):
+        for step in steps:
+            action = required_action(step.get("action"))
+            data = csv_cell(step.get("data"))
+            expected = csv_cell(step.get("expected"))
+
+            if not action:
+                continue
+
             rows.append(
                 {
+                    "Test Case Identifier": source_key,
                     "Summary": summary,
-                    "Description": description if step_index == 1 else "",
+                    "Description": description,
                     "Test Type": DEFAULT_TEST_TYPE,
-                    "Manual Test Step Action": clean_text(step.get("action")),
-                    "Manual Test Step Data": clean_text(step.get("data")),
-                    "Manual Test Step Expected Result": clean_text(step.get("expected")),
-                    "Source Issue Key": source_key,
-                    "Source Step Field": step_source,
+                    "Action": action,
+                    "Data": data,
+                    "Expected Result": expected,
                     "Labels": labels,
+                    "Source Step Field": csv_cell(step_source),
                 }
             )
 
@@ -332,15 +368,15 @@ def build_rows(
 
 def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     fieldnames = [
+        "Test Case Identifier",
         "Summary",
         "Description",
         "Test Type",
-        "Manual Test Step Action",
-        "Manual Test Step Data",
-        "Manual Test Step Expected Result",
-        "Source Issue Key",
-        "Source Step Field",
+        "Action",
+        "Data",
+        "Expected Result",
         "Labels",
+        "Source Step Field",
     ]
 
     with path.open("w", encoding="utf-8-sig", newline="") as f:
@@ -349,6 +385,7 @@ def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
             fieldnames=fieldnames,
             delimiter=",",
             quoting=csv.QUOTE_ALL,
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)

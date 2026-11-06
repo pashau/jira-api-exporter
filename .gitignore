@@ -16,3 +16,5 @@ build/
 .ruff_cache/
 jira-exports/
 exports.json
+xray_manual_import.csv
+*.csv
