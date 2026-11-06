@@ -46,6 +46,7 @@ def clean_text(value: Any) -> str:
         return ""
     return str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
 
+
 def csv_cell(value: Any) -> str:
     """
     Make a value safe for Xray CSV import.
@@ -61,6 +62,7 @@ def csv_cell(value: Any) -> str:
     text = text.replace("\t", " ")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
 
 def required_action(value: Any) -> str:
     """
